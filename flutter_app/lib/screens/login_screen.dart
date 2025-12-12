@@ -1,62 +1,96 @@
+// lib/screens/login_screen.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../widgets/modern_button.dart';
-import 'package:provider/provider.dart';
-import '../services/auth_service.dart';
-import '../utils/validators.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
+import '../models/user.dart';
 
 class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _form = GlobalKey<FormState>();
   final _username = TextEditingController();
-  final _password = TextEditingController();
+  final _pubkey = TextEditingController();
   bool _loading = false;
+  String? _error;
 
-  // NOTE: This example uses a fake login and stores a dummy token.
-  // Replace with real backend auth endpoints when available.
-  Future<void> _login() async {
-    if (!_form.currentState!.validate()) return;
-    setState(() => _loading = true);
-    await Future.delayed(Duration(seconds: 1)); // simulate network
-    // On success save token
-    final auth = Provider.of<AuthService>(context, listen: false);
-    await auth.saveToken('demo-token-${_username.text}');
+  @override
+  void initState() {
+    super.initState();
+    _tryAutoLogin();
+  }
+
+  Future<void> _tryAutoLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.containsKey('current_user')) {
+      Navigator.pushReplacementNamed(context, '/');
+    }
+  }
+
+  Future<void> _register() async {
+    final username = _username.text.trim();
+    final pubkey = _pubkey.text.trim();
+    if (username.isEmpty) {
+      setState(() => _error = 'Username required');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final resp = await ApiService.register(username: username, publicKeyPem: pubkey.isEmpty ? null : pubkey);
     setState(() => _loading = false);
-    Navigator.pushReplacementNamed(context, '/home');
+    if (resp == null) {
+      setState(() => _error = 'No response from server');
+      return;
+    }
+    if (resp.containsKey('error')) {
+      setState(() => _error = resp['error'].toString());
+      return;
+    }
+    final userJson = resp['user'] as Map<String, dynamic>;
+    final user = User.fromJson(userJson);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('current_user', jsonEncode(userJson));
+    // navigate to home
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, '/');
   }
 
   @override
   void dispose() {
     _username.dispose();
-    _password.dispose();
+    _pubkey.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Welcome')),
+      appBar: AppBar(title: const Text('Login / Register')),
       body: Padding(
-        padding: const EdgeInsets.all(18.0),
+        padding: const EdgeInsets.all(16.0),
         child: Column(children: [
-          SizedBox(height: 12),
-          Text('Sign in to StegCrypt+', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-          SizedBox(height: 18),
-          Form(
-            key: _form,
-            child: Column(children: [
-              TextFormField(controller: _username, decoration: InputDecoration(labelText: 'Username'), validator: notEmptyValidator),
-              SizedBox(height: 12),
-              TextFormField(controller: _password, decoration: InputDecoration(labelText: 'Password'), obscureText: true, validator: notEmptyValidator),
-              SizedBox(height: 20),
-              ModernButton(label: 'Login', onPressed: _login, loading: _loading),
-            ]),
+          const Text('Enter username and optional public key'),
+          const SizedBox(height: 12),
+          TextField(controller: _username, decoration: const InputDecoration(labelText: 'Username')),
+          const SizedBox(height: 8),
+          TextField(controller: _pubkey, decoration: const InputDecoration(labelText: 'Public key (PEM)'), maxLines: 4),
+          const SizedBox(height: 12),
+          if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: _loading ? null : _register,
+            child: _loading ? const CircularProgressIndicator() : const Text('Register / Login'),
           ),
-          Spacer(),
-          TextButton(onPressed: ()=> Navigator.pushNamed(context, '/keys'), child: Text('Manage Keys')),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => Navigator.pushReplacementNamed(context, '/'),
+            child: const Text('Continue as guest'),
+          )
         ]),
       ),
     );

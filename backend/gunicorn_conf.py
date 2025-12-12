@@ -1,5 +1,5 @@
-bind = "0.0.0.0:8000"
-workers = 3
-worker_class = "gthread"
-threads = 2
+# gunicorn configuration for Flask-SocketIO with eventlet
+bind = '0.0.0.0:5000'
+workers = 1
+worker_class = 'eventlet'
 timeout = 120
