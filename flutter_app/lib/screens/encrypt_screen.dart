@@ -1,95 +1,125 @@
+// lib/screens/encrypt_screen.dart
+import 'dart:io' show File;
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:io';
-import '../services/api_service.dart';
-import '../widgets/file_tile.dart';
-import '../widgets/modern_button.dart';
-import '../widgets/result_card.dart';
-import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart' as http_parser;
+import 'package:mime/mime.dart';
+import 'package:path/path.dart' as path;
+
+import '../services/api_service.dart'; // update if your path differs
 
 class EncryptScreen extends StatefulWidget {
+  const EncryptScreen({Key? key}) : super(key: key);
+
   @override
-  State<EncryptScreen> createState() => _EncryptScreenState();
+  _EncryptScreenState createState() => _EncryptScreenState();
 }
 
 class _EncryptScreenState extends State<EncryptScreen> {
-  File? _image;
-  final _msgCtl = TextEditingController();
-  bool _loading = false;
-  Map<String, dynamic>? _metrics;
-  String? _stegoB64;
-  final ApiService api = ApiService();
+  PlatformFile? _pickedFileMeta;
+  Uint8List? _pickedBytes; // for web
+  File? _pickedFile;       // for mobile/desktop
+  final ApiService api = ApiService(baseUrl: 'http://127.0.0.1:5001/api');
 
-  Future pickImage() async {
-    final res = await FilePicker.platform.pickFiles(type: FileType.image);
-    if (res == null) return;
-    setState(() => _image = File(res.files.single.path!));
-  }
+  Future<void> pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true, // IMPORTANT for web: ensures bytes are available
+    );
+    if (result == null) return;
+    final pf = result.files.first;
 
-  Future upload() async {
-    if (_image == null || _msgCtl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Message and image required')));
-      return;
-    }
-    setState(() => _loading = true);
-    final resp = await api.encryptAndEmbed(message: _msgCtl.text.trim(), imageFile: _image!);
-    setState(() => _loading = false);
-    if (resp['error'] != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(resp['error'].toString())));
-      return;
-    }
     setState(() {
-      _metrics = Map<String, dynamic>.from(resp['metrics'] ?? {});
-      _stegoB64 = resp['stego_image_b64'];
+      _pickedFileMeta = pf;
+      _pickedBytes = pf.bytes;
+      // only set File on non-web and when a real path exists
+      _pickedFile = (pf.path != null && !kIsWeb) ? File(pf.path!) : null;
     });
   }
 
-  Future saveStego() async {
-    if (_stegoB64 == null) return;
-    final bytes = base64Decode(_stegoB64!);
-    final docDir = (await FilePicker.platform.getDirectoryPath()) ?? '';
-    if (docDir.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Pick a folder to save')));
-      return;
+  Widget _preview() {
+    if (_pickedBytes != null) {
+      return Image.memory(_pickedBytes!, width: 200, height: 200, fit: BoxFit.cover);
+    } else if (_pickedFile != null) {
+      return Image.file(_pickedFile!, width: 200, height: 200, fit: BoxFit.cover);
+    } else {
+      return Container(
+        width: 200,
+        height: 200,
+        color: Colors.grey[200],
+        child: const Icon(Icons.image, size: 48),
+      );
     }
-    final out = File('$docDir/stego_${DateTime.now().millisecondsSinceEpoch}.png');
-    await out.writeAsBytes(bytes);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved to ${out.path}')));
   }
 
-  @override
-  void dispose() {
-    _msgCtl.dispose();
-    super.dispose();
+  Future<void> upload(String message) async {
+    if (_pickedFileMeta == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pick an image first')));
+      return;
+    }
+
+    final mimeType = lookupMimeType(_pickedFileMeta!.name) ?? 'image/png';
+    final fileName = _pickedFileMeta!.name;
+    final uri = Uri.parse('${api.baseUrl}/steg/encrypt_embed');
+
+    final request = http.MultipartRequest('POST', uri);
+    request.fields['message'] = message;
+
+    if (kIsWeb) {
+      final bytes = _pickedBytes!;
+      final multipart = http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: fileName,
+        contentType: http_parser.MediaType.parse(mimeType),
+      );
+      request.files.add(multipart);
+    } else {
+      final picked = _pickedFile!;
+      final stream = http.ByteStream(picked.openRead());
+      final length = await picked.length();
+      final multipart = http.MultipartFile(
+        'file',
+        stream,
+        length,
+        filename: fileName,
+        contentType: http_parser.MediaType.parse(mimeType),
+      );
+      request.files.add(multipart);
+    }
+
+    final streamed = await request.send();
+    final resp = await http.Response.fromStream(streamed);
+    if (resp.statusCode == 200) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploaded successfully')));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${resp.statusCode}')));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final TextEditingController _msgCtrl = TextEditingController();
+
     return Scaffold(
-      appBar: AppBar(title: Text('Encrypt & Embed')),
+      appBar: AppBar(title: const Text('Encrypt & Embed')),
       body: Padding(
-        padding: const EdgeInsets.all(14.0),
-        child: Column(children: [
-          TextField(controller: _msgCtl, decoration: InputDecoration(labelText: 'Message to hide')),
-          SizedBox(height: 12),
-          Row(children: [
-            ElevatedButton.icon(onPressed: pickImage, icon: Icon(Icons.photo), label: Text('Pick cover image')),
-            SizedBox(width: 12),
-            if (_image != null) Expanded(child: FileTile(file: _image!)),
-          ]),
-          SizedBox(height: 12),
-          ModernButton(label: 'Encrypt & Embed', onPressed: upload, loading: _loading),
-          SizedBox(height: 12),
-          if (_metrics != null) ResultCard(title: 'Quality Metrics', metrics: _metrics),
-          if (_stegoB64 != null) Padding(
-            padding: const EdgeInsets.only(top: 12.0),
-            child: Column(children: [
-              ElevatedButton.icon(onPressed: saveStego, icon: Icon(Icons.save), label: Text('Save stego image')),
-              SizedBox(height: 8),
-              Text('AES key was returned by server: save it securely for extraction.', style: TextStyle(fontSize: 12, color: Colors.grey[700])),
-            ]),
-          ),
-        ]),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            _preview(),
+            const SizedBox(height: 12),
+            ElevatedButton(onPressed: pickFile, child: const Text('Pick Image')),
+            const SizedBox(height: 12),
+            TextField(controller: _msgCtrl, decoration: const InputDecoration(labelText: 'Message')),
+            const SizedBox(height: 12),
+            ElevatedButton(onPressed: () => upload(_msgCtrl.text), child: const Text('Upload')),
+          ],
+        ),
       ),
     );
   }

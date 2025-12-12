@@ -1,3 +1,4 @@
+import 'package:http_parser/http_parser.dart' as http_parser;
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -5,9 +6,9 @@ import 'package:mime/mime.dart';
 import 'package:path/path.dart' as path;
 
 class ApiService {
-  // Change baseUrl to your backend host. For Android emulator use 10.0.2.2
+  // Change baseUrl to your backend host. For desktop/web use 127.0.0.1:5001
   final String baseUrl;
-  ApiService({this.baseUrl = 'http://10.0.2.2:8000/api'});
+  ApiService({this.baseUrl = 'http://127.0.0.1:5001/api'});
 
   Future<Map<String, dynamic>> encryptAndEmbed({
     required String message,
@@ -32,7 +33,7 @@ class ApiService {
       imageFile.openRead(),
       await imageFile.length(),
       filename: path.basename(imageFile.path),
-      contentType: MediaType.parse(mimeType),
+      contentType: http_parser.MediaType.parse(mimeType),
     );
     request.files.add(fileStream);
 
@@ -61,7 +62,7 @@ class ApiService {
       imageFile.openRead(),
       await imageFile.length(),
       filename: path.basename(imageFile.path),
-      contentType: MediaType.parse(mimeType),
+      contentType: http_parser.MediaType.parse(mimeType),
     );
     request.files.add(fileStream);
 
@@ -78,18 +79,4 @@ class ApiService {
       return {'error': 'Invalid server response: ${resp.statusCode}'};
     }
   }
-}
-
-// Helper MediaType to avoid adding extra dependency
-class MediaType {
-  final String type;
-  final String subtype;
-  MediaType(this.type, this.subtype);
-  static MediaType parse(String mime) {
-    final parts = mime.split('/');
-    return MediaType(parts[0], parts[1]);
-  }
-
-  @override
-  String toString() => '$type/$subtype';
 }

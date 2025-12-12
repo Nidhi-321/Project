@@ -14,7 +14,7 @@ class ResultCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(14.0),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: Theme.of(context).textTheme.headline6),
+          Text(title, style: Theme.of(context).textTheme.titleLarge),
           SizedBox(height: 10),
           if (metrics != null) ...metrics!.entries.map((e) => Padding(
             padding: const EdgeInsets.symmetric(vertical: 2.0),

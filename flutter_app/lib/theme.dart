@@ -4,8 +4,8 @@ class AppTheme {
   static const Color primary = Color(0xFF6C5CE7);
   static const Color accent = Color(0xFF00B894);
   static final TextTheme textTheme = TextTheme(
-    headline6: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-    bodyText2: TextStyle(fontSize: 14),
+    titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+    bodyMedium: TextStyle(fontSize: 14),
   );
 
   static ThemeData get lightTheme => ThemeData(

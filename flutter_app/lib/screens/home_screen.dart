@@ -20,7 +20,7 @@ class HomeScreen extends StatelessWidget {
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text('Quick actions', style: Theme.of(context).textTheme.headline6),
+          Text('Quick actions', style: Theme.of(context).textTheme.titleLarge),
           SizedBox(height: 16),
           Row(children: [
             Expanded(child: ModernButton(label: 'Encrypt & Embed', onPressed: () => Navigator.pushNamed(context, '/encrypt'))),
